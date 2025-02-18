@@ -1,0 +1,74 @@
+1. 함수 오버로딩의 이해
+int main(void)
+{
+	MyFunc(10);
+	MyFunc(20, 30);
+	return 0;
+}
+////////////////////////////////////////////////////////////////////////////////
+2. 함수 오버 로딩의 예제 - 1
+int MyFunc(int num)
+{
+	num++;
+	return num;
+}
+
+int MyFunc(int a, int b)
+{
+	return a+b;
+}
+
+int main(void)
+{
+	MyFunc(10);
+	MyFunc(20, 30);
+	return 0;
+}
+////////////////////////////////////////////////////////////////////////////////
+# 실습
+1.
+#include <iostream>
+
+void MyFunc(void)
+{
+    std::cout<<"MyFunc(void) called"<<std::endl;
+}
+
+void MyFunc(char c)
+{
+    std::cout<<"MyFunc(char c) called"<<std::endl;
+}
+
+void MyFunc(int a, int b)
+{
+    std::cout<<"MyFunc(int a, int b) called"<<std::endl;
+}
+
+int main(void)
+{
+    MyFunc();
+    MyFunc('A');
+    MyFunc(12, 13);
+    return 0;
+}
+////////////////////////////////////////////////////////////////////////////////
+2.
+#include <iostream>
+
+int addlnteger(int x, int y)
+{
+    return x + y;
+}
+
+double addDouble(double x, double y)
+{
+    return x + y;
+}
+
+int main()
+{
+    std::cout << "정수 합: " << add(1, 10) << std::endl;
+    std::cout << "실수 합: " << add(1.5, 1.2) << std::endl;
+    
+    return 0;
+}
