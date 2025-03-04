@@ -1,0 +1,409 @@
+/////////////////////////////마스터 코드/////////////////////////////
+
+# include <SPI.h>
+
+const int SS_PIN = 53;
+
+//0xAA  Mode-manual mode_car  channel1_H  channel1_L  channel2_H  channel2_L  channel3_H  channel3_L  channel4_H  channel4_L  CRC
+
+struct Protocol 
+{
+  byte header = 0xAA;    // 시작 바이트
+  byte mode;             // Mode-manual/mode_car
+  byte ch1_H;           // channel1 상위 바이트
+  byte ch1_L;           // channel1 하위 바이트
+  byte ch2_H;           // channel2 상위 바이트
+  byte ch2_L;           // channel2 하위 바이트
+  byte ch3_H;           // channel3 상위 바이트
+  byte ch3_L;           // channel3 하위 바이트
+  byte ch4_H;           // channel4 상위 바이트
+  byte ch4_L;           // channel4 하위 바이트
+  byte crc;             // CRC 체크섬
+};
+
+Protocol sendProtocol;
+Protocol receiveProtocol;
+
+// 16비트 채널값을 상위/하위 바이트로 분리하는 함수
+void setChannelValue(int channelValue, byte &highByte, byte &lowByte) 
+{
+  highByte = (channelValue >> 8) & 0xFF;
+  lowByte = channelValue & 0xFF;
+}
+
+// CRC 계산 함수
+byte calculateCRC(Protocol &p) 
+{
+  byte crc = p.header ^ p.mode;
+  crc ^= p.ch1_H ^ p.ch1_L;
+  crc ^= p.ch2_H ^ p.ch2_L;
+  crc ^= p.ch3_H ^ p.ch3_L;
+  crc ^= p.ch4_H ^ p.ch4_L;
+  return crc;
+}
+
+void setup() 
+{
+  Serial.begin(9600);
+  pinMode(SS_PIN, OUTPUT);
+  digitalWrite(SS_PIN, HIGH);
+  SPI.begin();
+  SPI.setClockDivider(SPI_CLOCK_DIV8);
+}
+
+void sendData() 
+{
+  // 예시 데이터 설정
+  sendProtocol.mode = 0x01;  // manual mode
+
+  // 채널값 설정 (예시: 16비트 값)
+  setChannelValue(1500, sendProtocol.ch1_H, sendProtocol.ch1_L);  // 채널1: 1500
+  setChannelValue(1200, sendProtocol.ch2_H, sendProtocol.ch2_L);  // 채널2: 1000
+  setChannelValue(2000, sendProtocol.ch3_H, sendProtocol.ch3_L);  // 채널3: 2000
+  setChannelValue(1750, sendProtocol.ch4_H, sendProtocol.ch4_L);  // 채널4: 1750
+
+  // CRC 계산
+  sendProtocol.crc = calculateCRC(sendProtocol);
+
+  // 데이터 전송 및 응답 수신
+  digitalWrite(SS_PIN, LOW);
+  delayMicroseconds(100);
+
+  receiveProtocol.header = SPI.transfer(sendProtocol.header);
+  delayMicroseconds(10);
+  receiveProtocol.mode = SPI.transfer(sendProtocol.mode);
+  delayMicroseconds(10);
+  receiveProtocol.ch1_H = SPI.transfer(sendProtocol.ch1_H);
+  delayMicroseconds(10);
+  receiveProtocol.ch1_L = SPI.transfer(sendProtocol.ch1_L);
+  delayMicroseconds(10);
+  receiveProtocol.ch2_H = SPI.transfer(sendProtocol.ch2_H);
+  delayMicroseconds(10);
+  receiveProtocol.ch2_L = SPI.transfer(sendProtocol.ch2_L);
+  delayMicroseconds(10);
+  receiveProtocol.ch3_H = SPI.transfer(sendProtocol.ch3_H);
+  delayMicroseconds(10);
+  receiveProtocol.ch3_L = SPI.transfer(sendProtocol.ch3_L);
+  delayMicroseconds(10);
+  receiveProtocol.ch4_H = SPI.transfer(sendProtocol.ch4_H);
+  delayMicroseconds(10);
+  receiveProtocol.ch4_L = SPI.transfer(sendProtocol.ch4_L);
+  delayMicroseconds(10);
+  receiveProtocol.crc = SPI.transfer(sendProtocol.crc);
+  delayMicroseconds(10);  
+  digitalWrite(SS_PIN, HIGH);
+  delayMicroseconds(100);  
+
+  // 데이터 출력
+  Serial.println("Sent data:");
+  printProtocol(sendProtocol);
+
+  Serial.println("Received response:");
+  printProtocol(receiveProtocol);
+}
+
+void printProtocol(Protocol &p) 
+{
+  Serial.print("Header: 0x"); Serial.print(p.header, HEX);
+  Serial.print(" Mode: 0x"); Serial.print(p.mode, HEX);
+  Serial.print(" CH1: "); Serial.print((p.ch1_H << 8) | p.ch1_L);
+  Serial.print(" CH2: "); Serial.print((p.ch2_H << 8) | p.ch2_L);
+  Serial.print(" CH3: "); Serial.print((p.ch3_H << 8) | p.ch3_L);
+  Serial.print(" CH4: "); Serial.print((p.ch4_H << 8) | p.ch4_L);
+  Serial.print(" CRC: 0x"); Serial.println(p.crc, HEX);
+}
+
+void loop() 
+{
+  sendData();
+  delay(1000);
+}
+
+```
+
+/////////////////////////////슬레이브 코드/////////////////////////////
+
+#include <SPI.h>
+
+const int SS_PIN = 53;
+
+struct Protocol 
+{
+  byte header;    
+  byte mode;      
+  byte ch1_H;     
+  byte ch1_L;     
+  byte ch2_H;     
+  byte ch2_L;     
+  byte ch3_H;     
+  byte ch3_L;     
+  byte ch4_H;     
+  byte ch4_L;     
+  byte crc;       
+};
+
+Protocol receiveProtocol;
+Protocol responseProtocol;
+volatile byte byteCounter = 0;
+volatile boolean newData = false;
+
+// CRC 계산 함수
+byte calculateCRC(Protocol &p) 
+{
+  byte crc = p.header ^ p.mode;
+  crc ^= p.ch1_H ^ p.ch1_L;
+  crc ^= p.ch2_H ^ p.ch2_L;
+  crc ^= p.ch3_H ^ p.ch3_L;
+  crc ^= p.ch4_H ^ p.ch4_L;
+  return crc;
+}
+
+void setup() 
+{
+  Serial.begin(9600);
+  // SPI 슬레이브 핀 설정
+  pinMode(MISO, OUTPUT);
+  pinMode(MOSI, INPUT);
+  pinMode(SCK, INPUT);
+  pinMode(SS_PIN, INPUT);
+ 
+   // 응답 데이터 초기화
+  responseProtocol.header = 0xBB;
+  responseProtocol.mode = 0x02;
+  responseProtocol.ch1_H = 0x05;
+  responseProtocol.ch1_L = 0xDC;
+  responseProtocol.ch2_H = 0x04;
+  responseProtocol.ch2_L = 0xB0;
+  responseProtocol.ch3_H = 0x07;
+  responseProtocol.ch3_L = 0xD0;
+  responseProtocol.ch4_H = 0x06;
+  responseProtocol.ch4_L = 0xD6;
+  responseProtocol.crc = calculateCRC(responseProtocol);
+
+  // SPI 슬레이브 설정
+  SPCR = 0;
+  SPCR |= (1 << SPE);    // SPI 활성화
+  SPCR |= (1 << SPIE);   // SPI 인터럽트 활성화
+  SPCR &= ~(1 << DORD);  // MSB first
+  SPCR &= ~(1 << MSTR);  // Slave 모드
+  SPCR &= ~(1 << CPOL);  // Clock Polarity: 0
+  SPCR &= ~(1 << CPHA);  // Clock Phase: 0
+  // 첫 응답 바이트 준비
+  SPDR = responseProtocol.header;
+}
+
+// SPI 인터럽트 핸들러
+ISR(SPI_STC_vect) 
+{
+  static byte nextByte = responseProtocol.header;
+  byte receivedByte = SPDR;
+
+  // 다음 전송할 바이트 설정
+  switch(byteCounter) 
+  {
+    case 0:
+      if(receivedByte == 0xAA) 
+      {
+        nextByte = responseProtocol.mode;
+        byteCounter++;
+      }
+      break;
+
+    case 1:
+      nextByte = responseProtocol.ch1_H;
+      byteCounter++;
+      break;
+
+    case 2:
+      nextByte = responseProtocol.ch1_L;
+      byteCounter++;
+      break;
+      
+    case 3:
+      nextByte = responseProtocol.ch2_H;
+      byteCounter++;
+      break;
+
+    case 4:
+      nextByte = responseProtocol.ch2_L;
+      byteCounter++;
+      break;
+
+    case 5:
+      nextByte = responseProtocol.ch3_H;
+      byteCounter++;
+      break;
+
+    case 6:
+      nextByte = responseProtocol.ch3_L;
+      byteCounter++;
+      break;
+
+    case 7:
+      nextByte = responseProtocol.ch4_H;
+      byteCounter++;
+      break;
+
+    case 8:
+      nextByte = responseProtocol.ch4_L;
+      byteCounter++;
+      break;
+
+    case 9:
+      nextByte = responseProtocol.crc;
+      byteCounter = 0;
+      newData = true;
+      break;
+
+    default:
+      nextByte = responseProtocol.header;
+      byteCounter = 0;
+      break;
+  }
+
+  // 다음 바이트를 전송 버퍼에 설정
+  SPDR = nextByte;
+}
+
+void loop() 
+{
+  if(newData) 
+  {
+    Serial.println("Data exchanged");
+    newData = false;
+  }
+}
+```
+
+---
+
+# 결과
+
+![image.png](attachment:0bf41ce8-f642-466e-8b8b-bcc737da05ad:image.png)
+
+![image.png](attachment:272443bf-5229-46d2-b168-1579d16dab04:image.png)
+
+---
+
+# 코드 분석
+
+## 🔸 **프로토콜 구조체 (`Protocol`)**
+
+```
+| Header (1) | Mode (1) | CH1_H (1) | CH1_L (1) | CH2_H (1) | CH2_L (1) | CH3_H (1) | CH3_L (1) | CH4_H (1) | CH4_L (1) | CRC (1) |
+
+```
+
+- **Header (1 Byte)**: 시작 바이트 (`마스터: 0xAA`, `슬레이브: 0xBB`)
+- **Mode (1 Byte)**: 데이터 전송 모드
+- **CHx_H / CHx_L (각 1 Byte)**: 16비트 채널 값을 상위/하위 바이트로 나눔
+- **CRC (1 Byte)**: 데이터 무결성을 위한 체크섬
+
+---
+
+## 🔸 **마스터 코드 주요 기능**
+
+1. **초기화 (`setup`)**
+    
+    ```cpp
+    pinMode(SS_PIN, OUTPUT);
+    digitalWrite(SS_PIN, HIGH);  // 기본: 비활성화
+    SPI.begin();
+    SPI.setClockDivider(SPI_CLOCK_DIV8);
+    ```
+    
+    - `SS_PIN`: **슬레이브 선택 핀** (LOW 시 통신 시작)
+    - **SPI 속도 설정**: `SPI_CLOCK_DIV8`
+2. **데이터 준비 (`sendData`)**
+    
+    ```cpp
+    sendProtocol.mode = 0x01;
+    setChannelValue(1500, sendProtocol.ch1_H, sendProtocol.ch1_L);
+    sendProtocol.crc = calculateCRC(sendProtocol);
+    ```
+    
+    - **Mode** 및 **채널 데이터** 설정
+    - **CRC 계산** (XOR 연산)
+
+3. **데이터 전송 및 응답 수신**
+    
+    ```cpp
+    digitalWrite(SS_PIN, LOW);  // SPI 활성화
+    receiveProtocol.header = SPI.transfer(sendProtocol.header);
+    receiveProtocol.mode = SPI.transfer(sendProtocol.mode);
+    ...
+    digitalWrite(SS_PIN, HIGH); // SPI 비활성화
+    ```
+    
+    - `SPI.transfer()`로 **바이트 전송 및 응답 수신**
+    - 모든 데이터 전송 후 `SS_PIN`을 **HIGH**로 하여 통신 종료
+
+4. **결과 출력 (`printProtocol`)**
+    
+    ```cpp
+    Serial.print("Header: 0x"); Serial.print(p.header, HEX);
+    Serial.print(" Mode: 0x"); Serial.print(p.mode, HEX);
+    Serial.print(" CH1: "); Serial.print((p.ch1_H << 8) | p.ch1_L);
+    Serial.print(" CRC: 0x"); Serial.println(p.crc, HEX);
+    ```
+    
+    - 송신 및 수신한 데이터 내용을 **시리얼 모니터**에 출력
+
+---
+
+## 🔸 **슬레이브 코드 주요 기능**
+
+1. **초기화 (`setup`)**
+    
+    ```cpp
+    pinMode(MISO, OUTPUT);
+    SPCR |= (1 << SPE) | (1 << SPIE);  // SPI 활성화 + 인터럽트 활성화
+    SPCR &= ~(1 << MSTR);              // 슬레이브 모드
+    SPDR = responseProtocol.header;
+    
+    ```
+    
+    - **슬레이브 모드** 설정 및 **SPI 인터럽트 활성화**
+    - **첫 번째 응답 바이트** 준비
+2. **SPI 인터럽트 핸들러 (`ISR`)**
+    
+    ```cpp
+    ISR(SPI_STC_vect) 
+    {
+      byte receivedByte = SPDR;
+      switch(byteCounter) 
+      {
+        case 0:
+          if(receivedByte == 0xAA) byteCounter++;
+          break;
+        case 9:
+          byteCounter = 0;
+          newData = true;
+          break;
+        default:
+          byteCounter++;
+          break;
+      }
+      SPDR = nextByte;
+    }
+    ```
+    
+    - **바이트 수신 후** 다음 응답 바이트 준비
+    - 마지막 바이트까지 수신 시 `newData` 플래그 활성화
+
+3. **데이터 처리 (`loop`)**
+    
+    ```cpp
+    void loop() 
+    {
+      if(newData) 
+      {
+        Serial.println("Data exchanged");
+        newData = false;
+      }
+    }
+    ```
+    
+    - 데이터가 완전히 수신되었을 때 시리얼 모니터에 출력
+
+---
